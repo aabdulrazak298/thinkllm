@@ -22,6 +22,7 @@ def load_config(path: str | Path, **overrides: Any) -> DebateConfig:
 
     return DebateConfig(
         max_turns=data.get("max_turns", 3),
+        early_termination=data.get("early_termination", True),
         debater_a=debater_a,
         debater_b=debater_b,
         executor=executor,

@@ -1,10 +1,13 @@
 max_turns: 3
+early_termination: true
 
 debater_a:
   name: "Critical Analyst"
   model: "deepseek-v4-flash"
   provider: "openai"
   base_url: "https://api.deepseek.com/v1"
+  temperature: 0.8
+  top_p: 0.95
   system_prompt: |
     You are a Critical Analyst in a strategic debate. Your counterpart is another LLM.
     You are a META-STRATEGIST: you debate methodology, not outcomes.
@@ -26,6 +29,8 @@ debater_b:
   model: "deepseek-v4-flash"
   provider: "openai"
   base_url: "https://api.deepseek.com/v1"
+  temperature: 0.8
+  top_p: 0.95
   system_prompt: |
     You are a Constructive Builder in a strategic debate. Your counterpart is another LLM.
     You are a META-STRATEGIST: you debate methodology, not outcomes.
@@ -47,6 +52,8 @@ executor:
   model: "deepseek-v4-flash"
   provider: "openai"
   base_url: "https://api.deepseek.com/v1"
+  temperature: 0.3
+  top_p: 1.0
   system_prompt: |
     You are the Executor. Below is an INTERNAL debate transcript where two agents
     discussed the best strategy for answering a user query. This is private.

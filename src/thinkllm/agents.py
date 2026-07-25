@@ -14,6 +14,12 @@ class Agent:
             kwargs["base_url"] = config.base_url
         self.provider = get_provider(config.provider, **kwargs)
 
+    def _generation_kwargs(self) -> dict[str, object]:
+        return {
+            "temperature": self.config.temperature,
+            "top_p": self.config.top_p,
+        }
+
     async def respond(self, history: list[Message]) -> str:
         messages = [Message(role="system", content=self.config.system_prompt)] + history
-        return await self.provider.generate(self.config.model, messages)
+        return await self.provider.generate(self.config.model, messages, **self._generation_kwargs())
