@@ -32,6 +32,7 @@ def _load_env() -> None:
 @click.option("--no-stream", is_flag=True, help="Disable streaming, show result all at once")
 @click.option("--no-early", is_flag=True, help="Disable early termination")
 @click.option("--no-cache", is_flag=True, help="Disable debate cache")
+@click.option("--chat", is_flag=True, help="Enter interactive chat mode with follow-up support")
 def main(
     config: str,
     query: str | None,
@@ -42,11 +43,9 @@ def main(
     no_stream: bool,
     no_early: bool,
     no_cache: bool,
+    chat: bool,
 ) -> None:
     _load_env()
-
-    if query is None:
-        query = click.prompt("Enter your query")
 
     cfg = load_config(
         config,
@@ -62,6 +61,13 @@ def main(
         cfg.debater_b.model = model_b
     if model_executor is not None:
         cfg.executor.model = model_executor
+
+    if chat:
+        asyncio.run(_chat_loop(cfg, cache, verbose))
+        return
+
+    if query is None:
+        query = click.prompt("Enter your query")
 
     engine = ThinkLLM(cfg, cache=cache)
 
@@ -105,6 +111,67 @@ async def _stream_cli(engine: ThinkLLM, query: str, verbose: bool) -> None:
                 click.echo("\n", err=True)
         elif event.type == "final_answer":
             click.echo(event.content)
+
+
+async def _chat_loop(cfg, cache, verbose: bool) -> None:
+    history: list[tuple[str, str]] = []  # (query, answer) pairs
+
+    click.echo("thinkllm chat — type /exit or Ctrl+C to quit\n")
+
+    while True:
+        try:
+            query = click.prompt("you", prompt_suffix=" > ")
+        except (KeyboardInterrupt, EOFError):
+            click.echo("\nGoodbye!")
+            break
+
+        if query.strip().lower() in ("/exit", "/quit"):
+            click.echo("Goodbye!")
+            break
+
+        if not query.strip():
+            continue
+
+        context = ""
+        if history:
+            context = "Previous discussion:\n"
+            for q, a in history[-3:]:  # last 3 exchanges for context
+                context += f"User: {q}\nAssistant: {a}\n\n"
+            query = f"{context}New question: {query}"
+
+        engine = ThinkLLM(cfg, cache=cache)
+
+        click.echo()
+        if verbose:
+            for ev in _collect_events(engine.stream(query)):
+                if ev.type == "turn_start":
+                    click.echo(f"\n--- Turn {ev.turn}/{engine.config.max_turns} ---\n")
+                elif ev.type == "agent_message":
+                    click.echo(f"[{ev.agent}]: {ev.content}\n")
+                elif ev.type == "converged":
+                    click.echo(f"\n[Converged at turn {ev.turn}]\n")
+                elif ev.type == "executor_start":
+                    click.echo("\n=== FINAL ANSWER (Executor) ===\n")
+                elif ev.type == "final_answer":
+                    history.append((query.split("New question: ")[-1], ev.content))
+                    click.echo(ev.content)
+        else:
+            click.echo("Thinking...", err=True)
+            result = await engine.run(query)
+            history.append((query.split("New question: ")[-1], result.final_answer))
+            click.echo(result.final_answer)
+
+        click.echo()
+
+    if cache is not None:
+        cache.close()
+
+
+async def _collect_events(stream):
+    events = []
+    async for ev in stream:
+        events.append(ev)
+    return events
 
 
 if __name__ == "__main__":

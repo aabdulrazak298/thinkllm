@@ -12,7 +12,7 @@ from .types import DebateConfig, Message
 
 
 class DebateCache:
-    def __init__(self, db_path: str | Path = "", memory_cache_size: int = 100):
+    def __init__(self, db_path: str | Path = "", memory_cache_size: int = 1000):
         if not db_path:
             db_path = Path.home() / ".thinkllm" / "cache.db"
         db_path = Path(db_path)

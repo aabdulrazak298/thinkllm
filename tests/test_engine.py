@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from thinkllm.types import AgentConfig, DebateConfig, Message, StreamEvent
-from thinkllm.agents import Agent
+from thinkllm.agents import Agent, estimate_tokens, trim_messages, estimate_message_tokens
 from thinkllm.engine import ThinkLLM, _has_converged
 
 
@@ -231,3 +231,81 @@ class TestThinkLLM:
             assert mock.generate.call_count == 6
 
             cache.close()
+
+
+class TestContextWindow:
+    def test_estimate_tokens(self):
+        assert estimate_tokens("hello world") == 2  # 11 // 4 = 2
+        assert estimate_tokens("") == 1
+
+    def test_trim_keeps_system_prompt(self):
+        messages = [
+            Message(role="system", content="sys prompt"),
+            Message(role="user", content="query"),
+            Message(role="assistant", content="long answer " * 50),  # ~550 chars ~ 137 tokens
+            Message(role="assistant", content="short"),
+        ]
+        result = trim_messages(messages, max_tokens=50)
+        assert result[0].role == "system"
+        assert result[0].content == "sys prompt"
+
+    def test_trim_drops_oldest_first(self):
+        messages = [
+            Message(role="system", content="sys"),
+            Message(role="user", content="old msg " * 20),
+            Message(role="assistant", content="recent " * 10),
+        ]
+        result = trim_messages(messages, max_tokens=50)
+        assert len(result) == 2  # system + recent
+        assert result[1].content.startswith("recent")
+
+    def test_trim_no_system_message(self):
+        messages = [
+            Message(role="user", content="first " * 50),
+            Message(role="assistant", content="second " * 5),
+        ]
+        result = trim_messages(messages, max_tokens=20)
+        assert len(result) == 1
+        assert "second" in result[0].content
+
+    def test_trim_within_limit_returns_all(self):
+        messages = [
+            Message(role="system", content="sys"),
+            Message(role="user", content="hi"),
+        ]
+        result = trim_messages(messages, max_tokens=1000)
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_agent_respond_trims_when_over_limit(self, agent_config):
+        agent_config.max_context_tokens = 50
+        mock_provider = AsyncMock()
+        mock_provider.generate.return_value = "ok"
+
+        # Create a long history that exceeds 50 tokens
+        history = [Message(role="user", content="query"), Message(role="assistant", content="x " * 500)]
+
+        with patch("thinkllm.agents.get_provider", return_value=mock_provider):
+            agent = Agent(agent_config)
+            await agent.respond(history)
+
+            sent_messages = mock_provider.generate.call_args[0][1]
+            total_tokens = estimate_message_tokens(sent_messages)
+            assert total_tokens <= 50
+
+    @pytest.mark.asyncio
+    async def test_agent_respond_no_trim_under_limit(self, agent_config):
+        agent_config.max_context_tokens = 10000
+        mock_provider = AsyncMock()
+        mock_provider.generate.return_value = "ok"
+
+        history = [Message(role="user", content="hi"), Message(role="assistant", content="hello")]
+
+        with patch("thinkllm.agents.get_provider", return_value=mock_provider):
+            agent = Agent(agent_config)
+            await agent.respond(history)
+
+            sent_messages = mock_provider.generate.call_args[0][1]
+            total_tokens = estimate_message_tokens(sent_messages)
+            assert total_tokens <= 10000
+            assert len(sent_messages) == 3  # system + user + assistant

@@ -7,6 +7,7 @@ debater_a:
   provider: "openai"
   temperature: 0.8
   top_p: 0.95
+  max_context_tokens: 4096
   system_prompt: |
     You are a Critical Analyst in a strategic debate. Your counterpart is another LLM.
     You are a META-STRATEGIST: you debate methodology, not outcomes.
@@ -29,6 +30,7 @@ debater_b:
   provider: "openai"
   temperature: 0.8
   top_p: 0.95
+  max_context_tokens: 4096
   system_prompt: |
     You are a Constructive Builder in a strategic debate. Your counterpart is another LLM.
     You are a META-STRATEGIST: you debate methodology, not outcomes.
@@ -51,6 +53,7 @@ executor:
   provider: "openai"
   temperature: 0.3
   top_p: 1.0
+  max_context_tokens: 8192
   system_prompt: |
     You are the Executor. Below is an INTERNAL debate transcript where two agents
     discussed the best strategy for answering a user query. This is private.
