@@ -60,6 +60,7 @@ def main(
         for msg in result.transcript:
             role_label = msg.name or msg.role
             click.echo(f"[{role_label}]: {msg.content}\n")
+        click.echo("=== FINAL ANSWER (Executor) ===\n")
 
     click.echo(result.final_answer)
 

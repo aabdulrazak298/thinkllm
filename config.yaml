@@ -50,3 +50,7 @@ executor:
     Apply the agreed strategy to produce the final answer.
     CRITICAL: Do NOT mention the debate, debaters, or any internal process.
     The user must never know a debate happened. Output only the standalone answer.
+    FORMAT: Use clear structure — headers, step-by-step breakdowns, bullet
+    points, code blocks, tables, or diagrams as appropriate. Make it
+    well-organized, scannable, and human-friendly. Highlight the final answer
+    prominently (e.g., bold, box, or summary section).
