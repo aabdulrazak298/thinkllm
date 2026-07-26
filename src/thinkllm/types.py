@@ -1,46 +1,44 @@
-from __future__ import annotations
+from enum import Enum
+from typing import Literal, Optional
 
-from dataclasses import dataclass, field
-from typing import Optional
-
-
-@dataclass
-class Message:
-    role: str  # "system", "user", "assistant"
-    content: str
-    name: Optional[str] = None
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class AgentConfig:
+class StreamEventType(str, Enum):
+    TURN_START = "turn_start"
+    AGENT_MESSAGE = "agent_message"
+    CONVERGED = "converged"
+    EXECUTOR_START = "executor_start"
+    FINAL_ANSWER = "final_answer"
+
+
+class AgentConfig(BaseModel):
     name: str
     model: str
-    provider: str
+    provider: Literal["openai", "anthropic", "google"]
     system_prompt: str
-    api_key: Optional[str] = None
     base_url: Optional[str] = None
     temperature: float = 0.7
     top_p: float = 1.0
     max_context_tokens: Optional[int] = None
 
 
-@dataclass
-class DebateConfig:
+class DebateConfig(BaseModel):
     max_turns: int = 3
     early_termination: bool = True
-    debater_a: AgentConfig = field(default_factory=lambda: AgentConfig(
+    debater_a: AgentConfig = Field(default_factory=lambda: AgentConfig(
         name="Debater A",
         model="gpt-4o",
         provider="openai",
         system_prompt="You are a debater.",
     ))
-    debater_b: AgentConfig = field(default_factory=lambda: AgentConfig(
+    debater_b: AgentConfig = Field(default_factory=lambda: AgentConfig(
         name="Debater B",
         model="gpt-4o",
         provider="openai",
         system_prompt="You are a debater.",
     ))
-    executor: AgentConfig = field(default_factory=lambda: AgentConfig(
+    executor: AgentConfig = Field(default_factory=lambda: AgentConfig(
         name="Executor",
         model="gpt-4o",
         provider="openai",
@@ -48,17 +46,16 @@ class DebateConfig:
     ))
 
 
-@dataclass
-class DebateResult:
+class DebateResult(BaseModel):
     query: str
-    transcript: list[Message]
+    transcript: list  # list[ModelMessage] — imported lazily to avoid coupling
     final_answer: str
-    metadata: dict = field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
 
 
-@dataclass
-class StreamEvent:
-    type: str  # "turn_start", "agent_message", "converged", "executor_start", "final_answer"
+class StreamEvent(BaseModel):
+    type: StreamEventType
     turn: Optional[int] = None
     agent: Optional[str] = None
     content: Optional[str] = None
+

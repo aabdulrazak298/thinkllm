@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +14,9 @@ def load_config(path: str | Path, **overrides: Any) -> DebateConfig:
         if value is not None:
             data[key] = value
 
-    debater_a = AgentConfig(**data["debater_a"])
-    debater_b = AgentConfig(**data["debater_b"])
-    executor = AgentConfig(**data["executor"])
+    debater_a = AgentConfig.model_validate(data["debater_a"])
+    debater_b = AgentConfig.model_validate(data["debater_b"])
+    executor = AgentConfig.model_validate(data["executor"])
 
     return DebateConfig(
         max_turns=data.get("max_turns", 3),

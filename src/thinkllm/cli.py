@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import os
 import sys
@@ -8,6 +6,7 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
+from .agents import _message_text
 from .cache import DebateCache
 from .config import load_config
 from .engine import ThinkLLM
@@ -76,9 +75,10 @@ def main(
         result = asyncio.run(engine.run(query))
         if verbose:
             click.echo("=== DEBATE TRANSCRIPT ===\n")
-            for msg in result.transcript:
-                role_label = msg.name or msg.role
-                click.echo(f"[{role_label}]: {msg.content}\n")
+            names = engine._reconstruct_names(result.transcript)
+            for i, msg in enumerate(result.transcript):
+                role_label = names[i] or "user"
+                click.echo(f"[{role_label}]: {_message_text(msg)}\n")
             click.echo("=== FINAL ANSWER (Executor) ===\n")
         click.echo(result.final_answer)
     else:
@@ -114,7 +114,7 @@ async def _stream_cli(engine: ThinkLLM, query: str, verbose: bool) -> None:
 
 
 async def _chat_loop(cfg, cache, verbose: bool) -> None:
-    history: list[tuple[str, str]] = []  # (query, answer) pairs
+    history: list[tuple[str, str]] = []
 
     click.echo("thinkllm chat — type /exit or Ctrl+C to quit\n")
 
@@ -135,7 +135,7 @@ async def _chat_loop(cfg, cache, verbose: bool) -> None:
         context = ""
         if history:
             context = "Previous discussion:\n"
-            for q, a in history[-3:]:  # last 3 exchanges for context
+            for q, a in history[-3:]:
                 context += f"User: {q}\nAssistant: {a}\n\n"
             query = f"{context}New question: {query}"
 

@@ -1,40 +1,39 @@
-from __future__ import annotations
+from typing import Any
 
-from .types import AgentConfig, Message
-from .providers import get_provider
+from pydantic_ai import Agent as PydanticAgent
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import ModelSettings
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+from .types import AgentConfig
+
+
+def _message_text(msg: ModelMessage) -> str:
+    parts = getattr(msg, "parts", [])
+    return " ".join(getattr(p, "content", "") or "" for p in parts)
 
 
 def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def estimate_message_tokens(messages: list[Message]) -> int:
-    return sum(estimate_tokens(m.content) for m in messages)
+def estimate_message_tokens(messages: list[ModelMessage]) -> int:
+    return sum(estimate_tokens(_message_text(m)) for m in messages)
 
 
-def trim_messages(messages: list[Message], max_tokens: int) -> list[Message]:
+def trim_messages(messages: list[ModelMessage], max_tokens: int) -> list[ModelMessage]:
     if not messages:
         return []
-    if messages[0].role != "system":
-        kept = _count_fit(messages, max_tokens)
-        return messages[-kept:] if kept > 0 else []
-
-    system = messages[0]
-    rest = messages[1:]
-    sys_tokens = estimate_tokens(system.content)
-    available = max_tokens - sys_tokens
-    if available <= 0:
-        return [system]
-
-    kept = _count_fit(rest, available)
-    return [system] + (rest[-kept:] if kept > 0 else [])
+    kept = _count_fit(messages, max_tokens)
+    return messages[-kept:] if kept > 0 else []
 
 
-def _count_fit(messages: list[Message], max_tokens: int) -> int:
+def _count_fit(messages: list[ModelMessage], max_tokens: int) -> int:
     count = 0
     used = 0
     for m in reversed(messages):
-        t = estimate_tokens(m.content)
+        t = estimate_tokens(_message_text(m))
         if used + t > max_tokens:
             break
         used += t
@@ -42,25 +41,34 @@ def _count_fit(messages: list[Message], max_tokens: int) -> int:
     return count
 
 
-class Agent:
-    def __init__(self, config: AgentConfig):
+class DebaterAgent:
+    def __init__(self, config: AgentConfig, _model: Any = None):
         self.config = config
-        kwargs: dict[str, object] = {}
-        if config.api_key is not None:
-            kwargs["api_key"] = config.api_key
-        if config.base_url is not None:
-            kwargs["base_url"] = config.base_url
-        self.provider = get_provider(config.provider, **kwargs)
+        self._model = _model or self._resolve_model(config)
+        self._agent = PydanticAgent(
+            self._model,
+            system_prompt=config.system_prompt,
+            model_settings=ModelSettings(
+                temperature=config.temperature,
+                top_p=config.top_p,
+            ),
+        )
 
-    def _generation_kwargs(self) -> dict[str, object]:
-        return {
-            "temperature": self.config.temperature,
-            "top_p": self.config.top_p,
-        }
+    @staticmethod
+    def _resolve_model(config: AgentConfig):
+        if config.provider == "openai" and config.base_url:
+            provider = OpenAIProvider(base_url=config.base_url)
+            return OpenAIChatModel(config.model, provider=provider)
+        return f"{config.provider}:{config.model}"
 
-    async def respond(self, history: list[Message]) -> str:
-        messages = [Message(role="system", content=self.config.system_prompt)] + history
+    async def respond(self, history: list[ModelMessage]) -> str:
+        messages = list(history)
         limit = self.config.max_context_tokens
         if limit is not None and estimate_message_tokens(messages) > limit:
             messages = trim_messages(messages, limit)
-        return await self.provider.generate(self.config.model, messages, **self._generation_kwargs())
+
+        result = await self._agent.run(
+            user_prompt="Respond to the last message.",
+            message_history=messages,
+        )
+        return result.output
