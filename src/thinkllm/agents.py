@@ -67,8 +67,11 @@ class DebaterAgent:
         if limit is not None and estimate_message_tokens(messages) > limit:
             messages = trim_messages(messages, limit)
 
+        prompt = _message_text(messages[-1]) if messages else ""
+        prior = messages[:-1] if len(messages) > 1 else messages
+
         result = await self._agent.run(
-            user_prompt="Respond to the last message.",
-            message_history=messages,
+            user_prompt=prompt,
+            message_history=prior,
         )
         return result.output
