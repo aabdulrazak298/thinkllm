@@ -117,3 +117,9 @@ class DebateCache:
 
     def close(self) -> None:
         self._conn.close()
+
+    def clear(self) -> None:
+        """Clear all cached debates (memory + SQLite)."""
+        self._memory.clear()
+        self._conn.execute("DELETE FROM debates")
+        self._conn.commit()
