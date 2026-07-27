@@ -18,6 +18,7 @@ class AgentConfig(BaseModel):
     provider: Literal["openai", "anthropic", "google"]
     system_prompt: str
     base_url: Optional[str] = None
+    api_key: Optional[str] = None
     temperature: float = 0.7
     top_p: float = 1.0
     max_context_tokens: Optional[int] = None

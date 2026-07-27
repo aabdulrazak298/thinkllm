@@ -5,12 +5,18 @@ from collections import OrderedDict
 from pathlib import Path
 
 from pydantic_ai.messages import ModelMessagesTypeAdapter
+from rapidfuzz import fuzz
 
 from .types import DebateConfig
 
 
 class DebateCache:
-    def __init__(self, db_path: str | Path = "", memory_cache_size: int = 1000):
+    def __init__(
+        self,
+        db_path: str | Path = "",
+        memory_cache_size: int = 1000,
+        fuzzy_threshold: float = 85.0,
+    ):
         if not db_path:
             db_path = Path.home() / ".thinkllm" / "cache.db"
         db_path = Path(db_path)
@@ -35,6 +41,7 @@ class DebateCache:
 
         self._memory: OrderedDict[str, tuple[list, int]] = OrderedDict()
         self._memory_max = memory_cache_size
+        self._fuzzy_threshold = fuzzy_threshold
 
     @staticmethod
     def _hash(text: str) -> str:
@@ -69,6 +76,35 @@ class DebateCache:
     def _cache_key(self, query: str, config: DebateConfig) -> str:
         return self._hash(query) + ":" + self._config_fingerprint(config)
 
+    def _fuzzy_scan(
+        self, query: str, config: DebateConfig
+    ) -> tuple[list, int] | None:
+        """Find best fuzzy match among cached debates with same config."""
+        ch = self._config_fingerprint(config)
+        rows = self._conn.execute(
+            "SELECT query, transcript_json, max_turns FROM debates WHERE config_hash=?",
+            (ch,),
+        ).fetchall()
+
+        if not rows:
+            return None
+
+        best_score: float = 0.0
+        best_row = None
+        query_lower = query.lower()
+
+        for row in rows:
+            score = fuzz.token_set_ratio(query_lower, row[0].lower())
+            if score > best_score:
+                best_score = score
+                best_row = row
+
+        if best_row is not None and best_score >= self._fuzzy_threshold:
+            messages = ModelMessagesTypeAdapter.validate_json(best_row[1])
+            return (messages, best_row[2])
+
+        return None
+
     def get(self, query: str, config: DebateConfig) -> tuple[list, int] | None:
         key = self._cache_key(query, config)
 
@@ -83,7 +119,10 @@ class DebateCache:
             (qh, ch),
         ).fetchone()
         if row is None:
-            return None
+            result = self._fuzzy_scan(query, config)
+            if result is not None:
+                self._memory_set(key, result)
+            return result
 
         messages = ModelMessagesTypeAdapter.validate_json(row[0])
         result = (messages, row[1])

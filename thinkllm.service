@@ -1,0 +1,18 @@
+[Unit]
+Description=ThinkLLM Debate Webhook Server
+After=network.target
+
+[Service]
+Type=simple
+User=one
+WorkingDirectory=/home/one/cloud/projects/thinkllm
+EnvironmentFile=/home/one/cloud/projects/lowcostllm/.env
+Environment=OPENAI_API_KEY=%CHEAP_API_KEY
+Environment=THINKLLM_PORT=8802
+Environment=THINKLLM_HOST=127.0.0.1
+ExecStart=/home/one/cloud/projects/thinkllm/venv/bin/python /home/one/cloud/projects/thinkllm/server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

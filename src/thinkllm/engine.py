@@ -40,8 +40,8 @@ def _build_response_message(content: str) -> ModelResponse:
 class ThinkLLM:
     def __init__(self, config: DebateConfig, cache: DebateCache | None = None, _model=None):
         self.config = config
-        self.agent_a = DebaterAgent(config.debater_a, _model=_model)
-        self.agent_b = DebaterAgent(config.debater_b, _model=_model)
+        self.agent_a = DebaterAgent(config.debater_a, _model=_model, disable_thinking=True)
+        self.agent_b = DebaterAgent(config.debater_b, _model=_model, disable_thinking=True)
         self.executor = DebaterAgent(config.executor, _model=_model)
         self._cache = cache
 

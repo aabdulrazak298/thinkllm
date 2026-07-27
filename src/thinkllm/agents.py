@@ -42,9 +42,9 @@ def _count_fit(messages: list[ModelMessage], max_tokens: int) -> int:
 
 
 class DebaterAgent:
-    def __init__(self, config: AgentConfig, _model: Any = None):
+    def __init__(self, config: AgentConfig, _model: Any = None, disable_thinking: bool = False):
         self.config = config
-        self._model = _model or self._resolve_model(config)
+        self._model = _model or self._resolve_model(config, disable_thinking)
         self._agent = PydanticAgent(
             self._model,
             system_prompt=config.system_prompt,
@@ -55,9 +55,22 @@ class DebaterAgent:
         )
 
     @staticmethod
-    def _resolve_model(config: AgentConfig):
+    def _resolve_model(config: AgentConfig, disable_thinking: bool = False):
         if config.provider == "openai" and config.base_url:
-            provider = OpenAIProvider(base_url=config.base_url)
+            import os
+            from openai import AsyncOpenAI
+            key = config.api_key or os.environ.get("OPENAI_API_KEY")
+            client_kwargs = {"base_url": config.base_url, "api_key": key}
+            client = AsyncOpenAI(**client_kwargs)
+            if disable_thinking:
+                _orig_create = client.chat.completions.create
+                async def _patched(*args, **kwargs):
+                    if not kwargs.get("extra_body"):
+                        kwargs["extra_body"] = {}
+                    kwargs["extra_body"]["thinking"] = {"type": "disabled"}
+                    return await _orig_create(*args, **kwargs)
+                client.chat.completions.create = _patched
+            provider = OpenAIProvider(openai_client=client)
             return OpenAIChatModel(config.model, provider=provider)
         return f"{config.provider}:{config.model}"
 
@@ -67,11 +80,9 @@ class DebaterAgent:
         if limit is not None and estimate_message_tokens(messages) > limit:
             messages = trim_messages(messages, limit)
 
-        prompt = _message_text(messages[-1]) if messages else ""
-        prior = messages[:-1] if len(messages) > 1 else messages
-
         result = await self._agent.run(
-            user_prompt=prompt,
-            message_history=prior,
+            user_prompt="Your turn in the strategy debate. Counter or build on the previous argument. "
+                         "Remember: you are NOT answering the user — you are debating HOW the Executor should answer.",
+            message_history=messages,
         )
         return result.output
