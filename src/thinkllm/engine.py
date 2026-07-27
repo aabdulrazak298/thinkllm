@@ -45,8 +45,10 @@ class ThinkLLM:
         self.executor = DebaterAgent(config.executor, _model=_model)
         self._cache = cache
 
-    async def run(self, query: str) -> DebateResult:
+    async def run(self, query: str, primer: str | None = None) -> DebateResult:
         transcript = [_build_user_message(query)]
+        if primer:
+            transcript.append(_build_response_message(primer))
 
         cached = self._load_cache(query)
         if cached is not None:
@@ -72,8 +74,10 @@ class ThinkLLM:
             final_answer=final_answer,
         )
 
-    async def stream(self, query: str) -> AsyncIterator[StreamEvent]:
+    async def stream(self, query: str, primer: str | None = None) -> AsyncIterator[StreamEvent]:
         transcript = [_build_user_message(query)]
+        if primer:
+            transcript.append(_build_response_message(primer))
         max_turns = self.config.max_turns
 
         cached = self._load_cache(query)

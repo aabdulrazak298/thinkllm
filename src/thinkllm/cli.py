@@ -10,6 +10,7 @@ from .agents import _message_text
 from .cache import DebateCache
 from .config import load_config
 from .engine import ThinkLLM
+from .gatekeeper import run_gatekeeper
 
 
 def _load_env() -> None:
@@ -72,7 +73,7 @@ def main(
 
     if no_stream:
         click.echo("\nThinking...\n", err=True)
-        result = asyncio.run(engine.run(query))
+        result = asyncio.run(_run_with_gatekeeper(engine, query, verbose))
         if verbose:
             click.echo("=== DEBATE TRANSCRIPT ===\n")
             names = engine._reconstruct_names(result.transcript)
@@ -82,17 +83,29 @@ def main(
             click.echo("=== FINAL ANSWER (Executor) ===\n")
         click.echo(result.final_answer)
     else:
-        asyncio.run(_stream_cli(engine, query, verbose))
+        asyncio.run(_stream_with_gatekeeper(engine, query, verbose))
 
     if cache is not None:
         cache.close()
 
 
-async def _stream_cli(engine: ThinkLLM, query: str, verbose: bool) -> None:
+async def _run_with_gatekeeper(engine, query, verbose):
+    """Run gatekeeper then debate + executor (non-streaming)."""
+    _, primer, _ = await run_gatekeeper(query, verbose=verbose)
+    return await engine.run(query, primer=primer)
+
+
+async def _stream_with_gatekeeper(engine, query, verbose):
+    """Run gatekeeper then stream debate + executor."""
+    _, primer, _ = await run_gatekeeper(query, verbose=verbose)
+    await _stream_cli(engine, query, verbose, primer=primer)
+
+
+async def _stream_cli(engine: ThinkLLM, query: str, verbose: bool, primer: str | None = None) -> None:
     if verbose:
         click.echo("=== DEBATE TRANSCRIPT ===\n")
 
-    async for event in engine.stream(query):
+    async for event in engine.stream(query, primer=primer):
         if event.type == "turn_start":
             if verbose:
                 click.echo(f"\n--- Turn {event.turn}/{engine.config.max_turns} ---\n")
@@ -137,13 +150,20 @@ async def _chat_loop(cfg, cache, verbose: bool) -> None:
             context = "Previous discussion:\n"
             for q, a in history[-3:]:
                 context += f"User: {q}\nAssistant: {a}\n\n"
-            query = f"{context}New question: {query}"
 
         engine = ThinkLLM(cfg, cache=cache)
 
+        # Gatekeeper: classify + history pruning + web context
+        _, primer, use_history = await run_gatekeeper(query, context, verbose=verbose)
+        if not use_history:
+            context = ""  # drop unrelated history
+
         click.echo()
+        # Build debate query with context if history is relevant
+        full_query = f"{context}New question: {query}" if context else query
+
         if verbose:
-            for ev in _collect_events(engine.stream(query)):
+            for ev in await _collect_events(engine.stream(full_query, primer=primer)):
                 if ev.type == "turn_start":
                     click.echo(f"\n--- Turn {ev.turn}/{engine.config.max_turns} ---\n")
                 elif ev.type == "agent_message":
@@ -153,12 +173,12 @@ async def _chat_loop(cfg, cache, verbose: bool) -> None:
                 elif ev.type == "executor_start":
                     click.echo("\n=== FINAL ANSWER (Executor) ===\n")
                 elif ev.type == "final_answer":
-                    history.append((query.split("New question: ")[-1], ev.content))
+                    history.append((query, ev.content))
                     click.echo(ev.content)
         else:
             click.echo("Thinking...", err=True)
-            result = await engine.run(query)
-            history.append((query.split("New question: ")[-1], result.final_answer))
+            result = await engine.run(full_query, primer=primer)
+            history.append((query, result.final_answer))
             click.echo(result.final_answer)
 
         click.echo()
